@@ -1,0 +1,188 @@
+package gui
+
+import (
+	"fmt"
+	"github.com/lxn/walk"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+)
+
+//type MainWindow struct {
+//	*walk.MainWindow
+//}
+
+
+func CreateIM() {
+	walk.Initialize(walk.InitParams{PanicOnError: true})
+	defer walk.Shutdown()
+
+	mainWnd, err := walk.NewMainWindow()
+	if err != nil {
+		return
+	}
+
+	mw := &MainWindow{MainWindow: mainWnd}
+
+	mw.SetTitle("SocketIm Example")
+
+	button1, _ := walk.NewPushButton(mw)
+	button1.SetText("start port 8000")
+	button1.SetX(10)
+	button1.SetY(10)
+	button1.SetWidth(100)
+	button1.SetHeight(30)
+
+	button1.Clicked().Attach(func() {
+		go NewTalkWindow(mw, 8000, 8001)
+		button1.SetEnabled(false)
+	})
+
+	button2, _ := walk.NewPushButton(mw)
+	button2.SetText("start port 8001")
+	button2.SetX(10)
+	button2.SetY(60)
+	button2.SetWidth(100)
+	button2.SetHeight(30)
+
+	button2.Clicked().Attach(func() {
+		go NewTalkWindow(mw, 8001, 8000)
+		button2.SetEnabled(false)
+	})
+
+	mw.SetSize(walk.Size{120, 150})
+	mw.Show()
+
+	mw.Run()
+}
+const breakChars = "    "
+
+type TalkWindow struct {
+	*walk.MainWindow
+	ShowText *walk.TextEdit
+	SendText *walk.TextEdit
+	ListenPort int
+	SendPort int
+}
+
+func NewTalkWindow(mv *MainWindow, listenPort int, sendPort int) {
+	walk.Initialize(walk.InitParams{PanicOnError: true})
+	defer walk.Shutdown()
+
+	talkWnd, err := walk.NewMainWindow()
+	if err != nil {
+		return
+	}
+
+	tw := &TalkWindow{MainWindow: talkWnd, ListenPort: listenPort, SendPort: sendPort}
+
+	tw.SetTitle("I'm listing in" + strconv.Itoa(tw.ListenPort))
+
+	tw.ShowText, _ = walk.NewTextEdit(tw)
+	tw.ShowText.SetX(10)
+	tw.ShowText.SetY(10)
+	tw.ShowText.SetWidth(280)
+	tw.ShowText.SetHeight(300)
+	tw.ShowText.SetReadOnly(true)
+
+	tw.SendText, _ = walk.NewTextEdit(tw)
+	tw.SendText.SetX(10)
+	tw.SendText.SetY(320)
+	tw.SendText.SetWidth(200)
+	tw.SendText.SetHeight(30)
+
+	button1, _ := walk.NewPushButton(tw)
+	button1.SetText("发送")
+	button1.SetX(220)
+	button1.SetY(320)
+	button1.SetWidth(70)
+	button1.SetHeight(30)
+	button1.Clicked().Attach(func() {
+		tw.Send()
+	})
+
+	tw.SetSize(walk.Size{320, 400})
+	tw.Show()
+
+	go tw.Listen()
+	tw.Run()
+}
+
+func (this *TalkWindow)Send() error {
+	txt := this.SendText.Text()
+	conn, err := net.Dial("tcp", "localhost:" + strconv.Itoa(this.SendPort))
+	if err != nil {
+		return err
+	}
+
+	lenth := len([]byte(txt))
+	pre := Int32ToStream(int32(lenth),BigEndian)
+
+	fmt.Fprintf(conn, string(pre) + txt)
+	this.SendText.SetText("")
+	return nil
+}
+
+func (this *TalkWindow)Listen() error {
+	ln, err := net.Listen("tcp", ":" + strconv.Itoa(this.ListenPort))
+	if err != nil {
+		return err
+	}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		go func(){
+			buffer := make([]byte, 4)
+			conn.Read(buffer)
+			lenth := StreamToInt32(buffer, BigEndian)
+
+			contentBuf := make([]byte, lenth)
+			conn.Read(contentBuf)
+
+			text := strings.TrimSpace(string(contentBuf))
+			fmt.Println(text)
+			this.ShowText.SetText(this.ShowText.Text() + time.Now().Format("2006-01-02 10:13:40") + breakChars + strconv.Itoa(this.SendPort) + ":" + text + "\r\n")
+		}()
+	}
+	return nil
+}
+
+type ByteOrder int
+
+const (
+	BigEndian ByteOrder = iota
+	LittleEndian
+)
+
+func StreamToInt32(stream []byte, byteOrder ByteOrder) int32 {
+	if len(stream) != 4 {
+		return 0
+	}
+	var u uint32
+	if byteOrder == BigEndian {
+		u = uint32(stream[0]) + uint32(stream[1])<<8 + uint32(stream[2])<<16 + uint32(stream[3])<<24
+	} else {
+		u = uint32(stream[0])<<24 + uint32(stream[1])<<16 + uint32(stream[2])<<8 + uint32(stream[3])
+	}
+	return int32(u)
+}
+
+func Int32ToStream(i int32, byteOrder ByteOrder) []byte {
+	u := uint32(i)
+	stream := [4]byte{0, 0, 0, 0}
+	if byteOrder == BigEndian {
+		stream[0] = byte(u)
+		stream[1] = byte(u >> 8)
+		stream[2] = byte(u >> 16)
+		stream[3] = byte(u >> 24)
+	} else {
+		stream[0] = byte(u >> 24)
+		stream[1] = byte(u >> 16)
+		stream[2] = byte(u >> 8)
+		stream[3] = byte(u)
+	}
+	return stream[:]
+}
