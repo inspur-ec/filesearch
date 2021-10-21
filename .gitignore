@@ -7,6 +7,11 @@
 *.log
 *.log.*
 
+*.pdf
+*.bak
+*.docx
+*.doc
+*.xlsx
 
 # Windows
 # =========================
