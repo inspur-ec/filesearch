@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/inspur-ec/filesearch/conf"
-	"github.com/inspur-ec/filesearch/gui"
+	"filesearch/conf"
+	"filesearch/gui"
 	"github.com/olivere/elastic"
 	"log"
 	"os"
